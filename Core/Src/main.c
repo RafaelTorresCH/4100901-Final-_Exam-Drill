@@ -56,6 +56,17 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+void heartbeat(void)
+{
+	static uint32_t heartbeat_tick = 0;
+	if (heartbeat_tick < HAL_GetTick()) {
+		heartbeat_tick = HAL_GetTick() + 500;
+		HAL_GPIO_TogglePin(SYSTEM_LED_GPIO_Port, GPIO_PIN_5);
+	}
+}
+
+
 int _write(int file, char *ptr, int len)
 {
   // to using printf
@@ -63,10 +74,18 @@ int _write(int file, char *ptr, int len)
   return len;
 }
 
+//CALLBACK
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+	uint8_t key_pressed = keypad_scan(GPIO_Pin);
+	if (key_pressed != 0xFF) {
+		printf("Pressed: %c\r\n", key_pressed);
+		return;
+	}
 
 }
+
+
 /* USER CODE END 0 */
 
 /**
