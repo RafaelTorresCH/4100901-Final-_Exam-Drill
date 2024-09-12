@@ -5,8 +5,7 @@
  *      Author: torre
  */
 
-#include "KEYPAD_r.h"
-
+#include <keypad.h>
 #include "main.h"
 static uint8_t keypad_debounce(uint16_t GPIO_Pin)
 {

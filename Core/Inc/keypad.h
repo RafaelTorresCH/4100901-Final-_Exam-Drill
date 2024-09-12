@@ -5,8 +5,8 @@
  *      Author: torre
  */
 
-#ifndef INC_KEYPAD_R_H_
-#define INC_KEYPAD_R_H_
+#ifndef INC_KEYPAD_H_
+#define INC_KEYPAD_H_
 
 #include <stdint.h>
 
