@@ -1,12 +1,10 @@
-/*
- * KEYPAD_R.c
- *
- *  Created on: Sep 9, 2024
- *      Author: torre
- */
 
-#include <keypad.h>
+
+#include "keypad.h"
+
 #include "main.h"
+
+
 static uint8_t keypad_debounce(uint16_t GPIO_Pin)
 {
 	static uint16_t last_pressed = 0xFFFF;
@@ -70,23 +68,23 @@ uint8_t keypad_scan(uint16_t GPIO_Pin)
 	}
 	uint8_t row = 0xFF;
 	switch (GPIO_Pin) {
-	case COL_1_Pin:
-		row = keypad_scan_row(COL_1_GPIO_Port, COL_1_Pin);
+	case COLUMN_1_Pin:
+		row = keypad_scan_row(COLUMN_1_GPIO_Port, COLUMN_1_Pin);
 		key_pressed = keypad_chars[row - 1][1 - 1];
 		break;
 
-	case COL_2_Pin:
-		row = keypad_scan_row(COL_2_GPIO_Port, COL_2_Pin);
+	case COLUMN_2_Pin:
+		row = keypad_scan_row(COLUMN_2_GPIO_Port, COLUMN_2_Pin);
 		key_pressed = keypad_chars[row - 1][2 - 1];
 		break;
 
-	case COL_3_Pin:
-			row = keypad_scan_row(COL_3_GPIO_Port, COL_3_Pin);
+	case COLUMN_3_Pin:
+			row = keypad_scan_row(COLUMN_3_GPIO_Port, COLUMN_3_Pin);
 			key_pressed = keypad_chars[row - 1][3 - 1];
 			break;
 
-	case COL_4_Pin:
-			row = keypad_scan_row(COL_4_GPIO_Port, COL_4_Pin);
+	case COLUMN_4_Pin:
+			row = keypad_scan_row(COLUMN_4_GPIO_Port, COLUMN_4_Pin);
 			key_pressed = keypad_chars[row - 1][4 - 1];
 			break;
 	default:
@@ -94,4 +92,3 @@ uint8_t keypad_scan(uint16_t GPIO_Pin)
 	}
 	return key_pressed;
 }
-

@@ -17,17 +17,18 @@
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
-#include "keypad.h"
 #include "main.h"
-#include "ring_buffer.h"
-
-#include "ssd1306.h"
-#include "ssd1306_fonts.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
-#include <stdint.h>
+
+#include "ssd1306.h"
+#include "ssd1306_fonts.h"
+#include <ctype.h>  // for isdigit
+#include <string.h>  // for strcmp
+#include "ring_buffer.h"
+#include "keypad.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -37,10 +38,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-	#define USART2_BUFFER_SIZE 10
-	uint8_t usart2_buffer[USART2_BUFFER_SIZE];
-	ring_buffer_t usart2_rb;
-	uint8_t usart2_rx;
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,6 +54,20 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
+#define USART2_BUFFER_SIZE 8
+uint8_t usart2_buffer[USART2_BUFFER_SIZE];
+ring_buffer_t usart2_rb;
+uint8_t usart2_rx;
+
+uint32_t left_toggles = 0;
+uint32_t left_last_press_tick = 0;
+
+#define MAX_DIGITS 5 // Ajusta según la cantidad máxima de dígitos
+
+char digits[MAX_DIGITS+1] = {0}; // Arreglo para almacenar los dígitos
+int digit_count = 0;
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -70,61 +82,120 @@ static void MX_I2C1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-
-
-void heartbeat(void)
-{
-	static uint32_t heartbeat_tick = 0;
-	if (heartbeat_tick < HAL_GetTick()) {
-		heartbeat_tick = HAL_GetTick() + 500;
-		HAL_GPIO_TogglePin(SYSTEM_LED_GPIO_Port, GPIO_PIN_5);
-	}
-}
-
-
 int _write(int file, char *ptr, int len)
 {
-  // to using printf
   HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, 10);
   return len;
 }
 
-//CALLBACK
-char myString[10];
-uint8_t counter = 0;
+
+
+
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	uint8_t key_pressed = keypad_scan(GPIO_Pin);
-	if (key_pressed != 0xFF) {
-		printf("Pressed: %c\r\n", key_pressed);
-		uint8_t data = 0;
-		ring_buffer_write(&usart2_rb, key_pressed);
-		ring_buffer_read(&usart2_rb, &data);
-		//HAL_UART_Transmit(&huart2, &data, 1, 10);
-		myString[counter] = key_pressed;
-		counter++;
-		if(counter > 10 ){
-			counter = 0;
-		}
-		for(uint8_t  i = 0; i < counter; i++){
-			HAL_UART_Transmit(&huart2, &myString[i], 1, 10);
-			char tempString[2];       // Crear un string temporal para un solo carácter
-			    tempString[0] = myString[i];
-			    tempString[1] = '\0';     // Añadir el carácter nulo para terminar la cadena
 
-			    ssd1306_SetCursor(25 + i * 6, 30);  // Avanzar el cursor para cada letra
-			    ssd1306_WriteString(tempString, Font_7x10, White);
-			ssd1306_UpdateScreen();
-			if(i > 10){
-				ssd1306_Fill(Black);
-			}
-		}
+	    uint8_t key_pressed = keypad_scan(GPIO_Pin);
+	    process_keypad_input(key_pressed);
 
-		return;
+
 	}
 
+
+
+void low_power_mode()
+{
+#define AWAKE_TIME (10 * 1000) // 10 segundos
+	static uint32_t sleep_tick = AWAKE_TIME;
+
+	if (sleep_tick > HAL_GetTick()) {
+		return;
+	}
+	printf("Sleeping\r\n");
+	sleep_tick = HAL_GetTick() + AWAKE_TIME;
+
+	RCC->AHB1SMENR  = 0x0;
+	RCC->AHB2SMENR  = 0x0;
+	RCC->AHB3SMENR  = 0x0;
+
+	RCC->APB1SMENR1 = 0x0;
+	RCC->APB1SMENR2 = 0x0;
+	RCC->APB2SMENR  = 0x0;
+
+	/*Suspend Tick increment to prevent wakeup by Systick interrupt.
+	Otherwise the Systick interrupt will wake up the device within 1ms (HAL time base)*/
+	HAL_SuspendTick();
+
+	/* Enter Sleep Mode , wake up is done once User push-button is pressed */
+	HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+
+	/* Resume Tick interrupt if disabled prior to SLEEP mode entry */
+	HAL_ResumeTick();
+
+	printf("Awake\r\n");
 }
+
+#define MAX_PASSWORD_LENGTH 10 // Ajusta según la longitud de tu clave
+char password[] = "1087834596"; // Reemplaza con tu clave deseada
+char input_password[MAX_PASSWORD_LENGTH + 1]; // +1 para el carácter nulo
+int current_index = 0;
+
+#include <stdio.h>
+#include <string.h>
+#include "ssd1306.h"
+#include "keypad.h"
+
+
+void process_keypad_input(uint8_t key_pressed) {
+    if (isdigit(key_pressed)) {
+        // Agregar dígito a la clave
+        input_password[current_index++] = key_pressed;
+        input_password[current_index] = '\0'; // Agrega el terminador nulo al final
+        ssd1306_write_string_at(10, 15, input_password, Font_7x10); // Muestra la contraseña ingresada
+    } else if (key_pressed == '#') {
+        // Validar la clave solo al presionar '#'
+        if (strcmp(input_password, password) == 0) {
+            printf("Clave correcta!\n");
+            ssd1306_write_string_at(10, 25, "Clave correcta!", Font_7x10);
+            // Aquí puedes hacer otras acciones como activar un LED o abrir una puerta
+        } else {
+            printf("Clave incorrecta!\n");
+            ssd1306_write_string_at(10, 25, "Clave incorrecta!", Font_7x10);
+        }
+        // Resetea para una nueva entrada de clave
+        memset(input_password, 0, sizeof(input_password));
+        current_index = 0;
+    } else if (key_pressed == '*') {
+        // Resetea la entrada cuando se presiona '*'
+        printf("Reseteando clave...\n");
+        memset(input_password, 0, sizeof(input_password));
+        current_index = 0;
+        ssd1306_Fill(Black); // Limpiar la pantalla
+        ssd1306_UpdateScreen();
+    }
+}
+
+
+
+
+void ssd1306_write_string_at(int x, int y, const char* str, uint8_t font) {
+	ssd1306_Fill(Black);
+
+	ssd1306_SetCursor(x, y);
+  ssd1306_WriteString((char*)str, Font_7x10, White);
+  ssd1306_UpdateScreen();
+}
+
+void update_display() {
+    // Limpiar la pantalla (asumiendo que ssd1306_Fill(Black) limpia la pantalla)
+	ssd1306_SetCursor(10,15 );
+	ssd1306_Fill(Black);
+     ssd1306_WriteString(digits, Font_7x10, White);
+     ssd1306_UpdateScreen();// Replace White with desired color
+}
+
+
+
 
 
 /* USER CODE END 0 */
@@ -163,19 +234,33 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
+  ssd1306_Init();
+  ssd1306_Fill(Black);
+  ssd1306_SetCursor(30, 30);
+  ssd1306_WriteString("Welcome!", Font_7x10, White);
+  ssd1306_UpdateScreen();
+
+  ring_buffer_init(&usart2_rb, usart2_buffer, USART2_BUFFER_SIZE);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  ssd1306_Init();
-//  ssd1306_SetCursor(25, 30);
-//  ssd1306_WriteString("Hello World!", Font_7x10, White);
-//  ssd1306_UpdateScreen();
-
-  ring_buffer_init(&usart2_rb, usart2_buffer, USART2_BUFFER_SIZE);
   printf("Starting...\r\n");
-  while (1)
-  {
+  //HAL_UART_Receive_IT(&huart2, &usart2_rx, 1); // enable interrupt for USART2 Rx
+  ATOMIC_SET_BIT(USART2->CR1, USART_CR1_RXNEIE); // usando un funcion mas liviana para reducir memoria
+  while (1) {
+
+
+	  if (ring_buffer_is_full(&usart2_rb) != 0) {
+		  printf("Received:\r\n");
+		  while (ring_buffer_is_empty(&usart2_rb) == 0) {
+			  uint8_t data;
+			  ring_buffer_read(&usart2_rb, &data);
+			  HAL_UART_Transmit(&huart2, &data, 1, 10);
+		  }
+		  printf("\r\n");
+	  }
+	  low_power_mode();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -383,20 +468,20 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : COL_1_Pin */
-  GPIO_InitStruct.Pin = COL_1_Pin;
+  /*Configure GPIO pin : COLUMN_1_Pin */
+  GPIO_InitStruct.Pin = COLUMN_1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(COL_1_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(COLUMN_1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : COL_4_Pin */
-  GPIO_InitStruct.Pin = COL_4_Pin;
+  /*Configure GPIO pin : COLUMN_4_Pin */
+  GPIO_InitStruct.Pin = COLUMN_4_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(COL_4_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(COLUMN_4_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : COL_2_Pin COL_3_Pin */
-  GPIO_InitStruct.Pin = COL_2_Pin|COL_3_Pin;
+  /*Configure GPIO pins : COLUMN_2_Pin COLUMN_3_Pin */
+  GPIO_InitStruct.Pin = COLUMN_2_Pin|COLUMN_3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
